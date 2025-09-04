@@ -1,0 +1,47 @@
+{
+  "_preset": "balanced",
+  "_available_presets": {
+    "auto": "Automatically detect GPU and apply optimal settings (recommended)",
+    "maximum": "Maximum performance - uses 85% VRAM, highest hashrate",
+    "balanced": "Balanced performance - uses 75% VRAM, good for gaming PCs",
+    "lowpower": "Low power mode - uses 60% VRAM, good for 24/7 mining"
+  },
+  "_instructions": "Change '_preset' above to: auto, maximum, balanced, or lowpower. Then restart the miner.",
+
+  "pool": {
+    "url": "stratum+tcp://127.0.0.1",
+    "port": 3333,
+    "wallet": "1Ggdo3kTzGvmhSDuoZBuFZQeqDSg57FEf6",
+    "worker": "pastella-miner",
+    "daemon": false,
+    "daemon_url": "http://localhost:22000",
+    "daemon_api_key": ""
+  },
+  "cuda": {
+    "devices": [
+      {
+        "id": 0,
+        "threads": 512,
+        "blocks": 512,
+        "batch_size": 0,
+        "enabled": false,
+        "override_launch": false,
+        "_comment": "Specify GPU ID (0, 1, 2, etc)"
+      },
+      {
+        "id": 1,
+        "threads": 512,
+        "blocks": 512,
+        "batch_size": 256000,
+        "enabled": true,
+        "override_launch": false,
+        "_comment": "Specify GPU ID (0, 1, 2, etc)"
+      }
+    ]
+  },
+  "cpu": {
+    "enabled": false,
+    "threads": 1
+  },
+  "verbose": false
+}
