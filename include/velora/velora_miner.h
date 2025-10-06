@@ -1,13 +1,15 @@
 #pragma once
 
-#include "../types.h"
-#include "../mining_types.h"
-#include "velora_algorithm.h"
+// Include STL headers BEFORE CUDA headers to avoid conflicts
 #include <memory>
 #include <thread>
 #include <atomic>
 #include <functional>
 #include <mutex>
+
+#include "../types.h"
+#include "../mining_types.h"
+#include "velora_algorithm.h"
 
 
 namespace pastella {

@@ -2,6 +2,7 @@
 #include <memory>
 #include <thread>
 #include <atomic>
+#include <functional>
 #include <chrono>
 #include <signal.h>
 #include <optional>
