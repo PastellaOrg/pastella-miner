@@ -73,6 +73,8 @@ if(MSVC)
     add_compile_options(/MT$<$<CONFIG:Debug>:d>)
 else()
     add_compile_options(-Wall -Wextra -O3)
+    # Suppress specific warnings that cause issues with RapidJSON
+    add_compile_options(-Wno-class-memaccess)
 endif()
 
 # Find required packages
@@ -163,6 +165,7 @@ set(USE_NGHTTP2 OFF)
 set(ENABLE_MANUAL OFF)
 set(ENABLE_IPV6 ON)
 set(ENABLE_UNIX_SOCKETS OFF)
+set(CURL_WERROR OFF)
 
 # Platform-specific SSL configuration for CURL
 if(WIN32)
