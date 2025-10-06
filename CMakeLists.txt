@@ -21,19 +21,30 @@ if(CUDA_FOUND)
     set(CUDA_NVCC_FLAGS_DEBUG "-g -G")
     set(CUDA_NVCC_FLAGS_RELEASE "-O3")
 
-    # 🔧 VISUAL STUDIO 2022 COMPATIBILITY: Allow CUDA 12.1 to work with VS 2022
-    if(MSVC_VERSION GREATER_EQUAL 1930)
-        list(APPEND CUDA_NVCC_FLAGS "-allow-unsupported-compiler")
-        message(STATUS "⚙️  VS 2022 detected - adding -allow-unsupported-compiler flag for CUDA 12.1")
-    endif()
-
     # Include CUDA directories
     include_directories(${CUDA_INCLUDE_DIRS})
     link_directories(${CUDA_LIBRARY_DIRS})
 
-    # Set CUDA library directories explicitly
-    set(CUDA_LIBRARY_DIRS "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.1/lib/x64")
-    link_directories(${CUDA_LIBRARY_DIRS})
+    # Platform-specific CUDA configuration
+    if(WIN32)
+        # 🔧 VISUAL STUDIO 2022 COMPATIBILITY: Allow CUDA 12.1 to work with VS 2022
+        if(MSVC_VERSION GREATER_EQUAL 1930)
+            list(APPEND CUDA_NVCC_FLAGS "-allow-unsupported-compiler")
+            message(STATUS "⚙️  VS 2022 detected - adding -allow-unsupported-compiler flag for CUDA 12.1")
+        endif()
+
+        # Windows-specific: Add libcudacxx headers for <cuda/std/cstdint>
+        include_directories("C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.1/include")
+        include_directories("C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.1/include/cuda")
+        
+        # Set CUDA library directories explicitly for Windows
+        set(CUDA_LIBRARY_DIRS "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.1/lib/x64")
+        link_directories(${CUDA_LIBRARY_DIRS})
+    else()
+        # Linux: CUDA paths are already set correctly by find_package
+        include_directories("${CUDA_TOOLKIT_ROOT_DIR}/include")
+        include_directories("${CUDA_TOOLKIT_ROOT_DIR}/include/cuda")
+    endif()
 else()
     message(STATUS "⚠️  CUDA not available - building CPU-only version")
     add_definitions(-DNO_CUDA)
@@ -73,37 +84,49 @@ message(STATUS "✅ Using local CURL from externals")
 message(STATUS "   CURL Root: ${CURL_ROOT_DIR}")
 message(STATUS "   CURL Include: ${CURL_INCLUDE_DIR}")
 
-# Set OpenSSL paths explicitly for Windows
-set(OPENSSL_ROOT_DIR "C:/Program Files/OpenSSL-Win64")
-set(OPENSSL_INCLUDE_DIR "${OPENSSL_ROOT_DIR}/include")
-set(OPENSSL_LIBRARIES "${OPENSSL_ROOT_DIR}/lib/VC/x64/MT")
+# Platform-specific OpenSSL configuration
+if(WIN32)
+    # Windows: Use specific OpenSSL path
+    set(OPENSSL_ROOT_DIR "C:/Program Files/OpenSSL-Win64")
+    set(OPENSSL_INCLUDE_DIR "${OPENSSL_ROOT_DIR}/include")
+    set(OPENSSL_LIBRARIES "${OPENSSL_ROOT_DIR}/lib/VC/x64/MT")
 
-# Manually find OpenSSL libraries
-find_library(OPENSSL_SSL_LIBRARY
-    NAMES libssl_static libssl ssl
-    PATHS "${OPENSSL_ROOT_DIR}/lib/VC/x64/MT"
-    NO_DEFAULT_PATH
-)
+    # Manually find OpenSSL libraries on Windows
+    find_library(OPENSSL_SSL_LIBRARY
+        NAMES libssl_static libssl ssl
+        PATHS "${OPENSSL_ROOT_DIR}/lib/VC/x64/MT"
+        NO_DEFAULT_PATH
+    )
 
-find_library(OPENSSL_CRYPTO_LIBRARY
-    NAMES libcrypto_static libcrypto crypto
-    PATHS "${OPENSSL_ROOT_DIR}/lib/VC/x64/MT"
-    NO_DEFAULT_PATH
-)
+    find_library(OPENSSL_CRYPTO_LIBRARY
+        NAMES libcrypto_static libcrypto crypto
+        PATHS "${OPENSSL_ROOT_DIR}/lib/VC/x64/MT"
+        NO_DEFAULT_PATH
+    )
 
-if(OPENSSL_SSL_LIBRARY AND OPENSSL_CRYPTO_LIBRARY)
-    message(STATUS "✅ OpenSSL found manually")
-    message(STATUS "   OpenSSL Root: ${OPENSSL_ROOT_DIR}")
-    message(STATUS "   OpenSSL SSL: ${OPENSSL_SSL_LIBRARY}")
-    message(STATUS "   OpenSSL Crypto: ${OPENSSL_CRYPTO_LIBRARY}")
-    set(OpenSSL_FOUND TRUE)
-    add_definitions(-DHAVE_OPENSSL)
+    if(OPENSSL_SSL_LIBRARY AND OPENSSL_CRYPTO_LIBRARY)
+        message(STATUS "✅ OpenSSL found manually")
+        message(STATUS "   OpenSSL Root: ${OPENSSL_ROOT_DIR}")
+        message(STATUS "   OpenSSL SSL: ${OPENSSL_SSL_LIBRARY}")
+        message(STATUS "   OpenSSL Crypto: ${OPENSSL_CRYPTO_LIBRARY}")
+        set(OpenSSL_FOUND TRUE)
+        add_definitions(-DHAVE_OPENSSL)
+    else()
+        message(STATUS "⚠️  OpenSSL not found - using fallback crypto")
+        add_definitions(-DNO_OPENSSL)
+    endif()
 else()
-    message(STATUS "⚠️  OpenSSL not found - using fallback crypto")
-    message(STATUS "   Tried paths: ${OPENSSL_ROOT_DIR}")
-    message(STATUS "   SSL lib: ${OPENSSL_SSL_LIBRARY}")
-    message(STATUS "   Crypto lib: ${OPENSSL_CRYPTO_LIBRARY}")
-    add_definitions(-DNO_OPENSSL)
+    # Linux: Use standard OpenSSL finding
+    find_package(OpenSSL)
+    if(OPENSSL_FOUND)
+        message(STATUS "✅ OpenSSL found")
+        message(STATUS "   OpenSSL Version: ${OPENSSL_VERSION}")
+        message(STATUS "   OpenSSL Include: ${OPENSSL_INCLUDE_DIR}")
+        add_definitions(-DHAVE_OPENSSL)
+    else()
+        message(STATUS "⚠️  OpenSSL not found - using fallback crypto")
+        add_definitions(-DNO_OPENSSL)
+    endif()
 endif()
 
 find_package(Threads REQUIRED)
@@ -122,7 +145,7 @@ include_directories(${CMAKE_SOURCE_DIR}/externals/rapidjson/include)
 include_directories(${CMAKE_SOURCE_DIR}/externals/rapidjson/include/rapidjson)
 include_directories(${CURL_INCLUDE_DIR})
 
-# Configure CURL with minimal dependencies (HTTP only + Windows native SSL)
+# Configure CURL with platform-specific settings
 set(BUILD_SHARED_LIBS OFF)
 set(BUILD_STATIC_LIBS ON)
 set(BUILD_CURL_EXE OFF)
@@ -131,8 +154,6 @@ set(BUILD_LIBCURL_DOCS OFF)
 set(BUILD_MISC_DOCS OFF)
 set(CURL_STATIC_CRT ON)
 set(HTTP_ONLY ON)
-set(CURL_USE_OPENSSL OFF)
-set(CURL_USE_SCHANNEL ON)
 set(CURL_USE_LIBPSL OFF)
 set(USE_LIBIDN2 OFF)
 set(CURL_ZLIB OFF)
@@ -143,7 +164,16 @@ set(ENABLE_MANUAL OFF)
 set(ENABLE_IPV6 ON)
 set(ENABLE_UNIX_SOCKETS OFF)
 
-message(STATUS "✅ CURL configured to use Windows native SSL (Schannel)")
+# Platform-specific SSL configuration for CURL
+if(WIN32)
+    set(CURL_USE_OPENSSL OFF)
+    set(CURL_USE_SCHANNEL ON)
+    message(STATUS "✅ CURL configured to use Windows native SSL (Schannel)")
+else()
+    set(CURL_USE_OPENSSL ON)
+    set(CURL_USE_SCHANNEL OFF)
+    message(STATUS "✅ CURL configured to use OpenSSL")
+endif()
 
 # Add CURL as a subdirectory
 add_subdirectory(externals/curl)
@@ -196,19 +226,39 @@ if(CUDA_FOUND)
 
     # Link CUDA runtime libraries
     target_link_libraries(pastella-miner ${CUDA_LIBRARIES})
-    target_link_libraries(pastella-miner "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.1/lib/x64/cudart_static.lib")
-    target_link_libraries(pastella-miner "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.1/lib/x64/cuda.lib")
+    
+    # Platform-specific CUDA library linking
+    if(WIN32)
+        target_link_libraries(pastella-miner "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.1/lib/x64/cudart_static.lib")
+        target_link_libraries(pastella-miner "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.1/lib/x64/cuda.lib")
+    else()
+        # Linux: Use standard CUDA libraries
+        find_library(CUDART_LIBRARY cudart_static PATHS ${CUDA_TOOLKIT_ROOT_DIR}/lib64)
+        if(CUDART_LIBRARY)
+            target_link_libraries(pastella-miner ${CUDART_LIBRARY})
+            message(STATUS "   CUDA runtime library linked: ${CUDART_LIBRARY}")
+        else()
+            target_link_libraries(pastella-miner cudart_static)
+            message(STATUS "   CUDA runtime library linked (default)")
+        endif()
+    endif()
 else()
     # Create regular executable without CUDA
     add_executable(pastella-miner ${SOURCES} ${HEADERS})
 endif()
 
 # Link libraries
-if(OpenSSL_FOUND)
-    # Link OpenSSL static libraries using manually found paths
-    target_link_libraries(pastella-miner ${OPENSSL_SSL_LIBRARY})
-    target_link_libraries(pastella-miner ${OPENSSL_CRYPTO_LIBRARY})
-    message(STATUS "   OpenSSL static libraries linked")
+if(OpenSSL_FOUND OR OPENSSL_FOUND)
+    if(WIN32)
+        # Windows: Link manually found OpenSSL
+        target_link_libraries(pastella-miner ${OPENSSL_SSL_LIBRARY})
+        target_link_libraries(pastella-miner ${OPENSSL_CRYPTO_LIBRARY})
+        message(STATUS "   OpenSSL static libraries linked")
+    else()
+        # Linux: Link standard OpenSSL
+        target_link_libraries(pastella-miner OpenSSL::SSL OpenSSL::Crypto)
+        message(STATUS "   OpenSSL libraries linked")
+    endif()
 else()
     message(STATUS "   Using fallback crypto (no OpenSSL)")
 endif()
@@ -218,15 +268,3 @@ target_link_libraries(pastella-miner Threads::Threads)
 # Link CURL
 target_link_libraries(pastella-miner libcurl)
 message(STATUS "   CURL library linked")
-
-if(CUDA_FOUND)
-    # For CMake 3.31.8 with CUDA language support, use the correct library
-    find_library(CUDART_LIBRARY cudart_static PATHS ${CMAKE_CUDA_IMPLICIT_LINK_DIRECTORIES})
-    if(CUDART_LIBRARY)
-        target_link_libraries(pastella-miner ${CUDART_LIBRARY})
-        message(STATUS "   CUDA runtime library linked: ${CUDART_LIBRARY}")
-    else()
-        message(STATUS "   CUDA runtime library not found, using default linking")
-        target_link_libraries(pastella-miner cudart_static)
-    endif()
-endif()
