@@ -73,8 +73,11 @@ if(MSVC)
     add_compile_options(/MT$<$<CONFIG:Debug>:d>)
 else()
     add_compile_options(-Wall -Wextra -O3)
-    # Suppress specific warnings that cause issues with RapidJSON
-    add_compile_options(-Wno-class-memaccess)
+endif()
+
+# Add C++-specific compile options (not for C files)
+if(NOT MSVC)
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Wno-class-memaccess>)
 endif()
 
 # Find required packages
