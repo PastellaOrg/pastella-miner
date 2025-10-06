@@ -16,10 +16,19 @@ static Hash256 sha256_external(const u8* data, size_t length) {
     Hash256 out{};
     std::fill(out.begin(), out.end(), 0); // Ensure clean initialization
 
+#ifdef HAVE_OPENSSL
+    // Use OpenSSL implementation
+    SHA256_CTX ctx;
+    SHA256_Init(&ctx);
+    SHA256_Update(&ctx, data, length);
+    SHA256_Final(out.data(), &ctx);
+#else
+    // Use custom implementation
     SHA256_CTX ctx;
     sha256_init(&ctx);
     sha256_update(&ctx, data, length);
     sha256_final(&ctx, out.data());
+#endif
 
     return out;
 }

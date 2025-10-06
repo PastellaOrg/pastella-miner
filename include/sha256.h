@@ -9,6 +9,9 @@
 #ifndef SHA256_H
 #define SHA256_H
 
+// Only use custom SHA256 implementation when OpenSSL is not available
+#ifndef HAVE_OPENSSL
+
 /*************************** HEADER FILES ***************************/
 #include <stddef.h>
 
@@ -39,4 +42,6 @@ void sha256_final(SHA256_CTX *ctx, BYTE hash[]);
 }
 #endif
 
-#endif   // SHA256_H
+#endif  // HAVE_OPENSSL
+
+#endif  // SHA256_H
