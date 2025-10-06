@@ -33,8 +33,7 @@ jobs:
       id: cuda-toolkit
       with:
         cuda: '12.1.0'
-        method: 'local'
-        sub-packages: '["nvcc", "cudart", "visual_studio_integration", "thrust", "libcudacxx"]'
+        method: 'network'
 
     - name: Verify CUDA installation (REQUIRED)
       run: |
