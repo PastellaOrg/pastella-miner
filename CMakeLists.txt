@@ -188,10 +188,17 @@ set(SOURCES
     src/velora/velora_miner.cpp
     src/utils/crypto_utils.cpp
     src/utils/logger.cpp
-    src/sha256.c
     src/transactions/transaction_manager.cpp
     src/daemon/daemon_client.cpp
 )
+
+# Add custom SHA256 implementation only if OpenSSL is not available
+if(NOT OpenSSL_FOUND AND NOT OPENSSL_FOUND)
+    set(SOURCES ${SOURCES} src/sha256.c)
+    message(STATUS "   Using custom SHA256 implementation (no OpenSSL)")
+else()
+    message(STATUS "   Using OpenSSL SHA256 implementation")
+endif()
 
 # Add CUDA kernel if CUDA is available
 if(CUDA_FOUND)
