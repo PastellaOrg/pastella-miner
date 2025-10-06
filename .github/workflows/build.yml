@@ -34,7 +34,7 @@ jobs:
       with:
         cuda: '12.1.0'
         method: 'local'
-        sub-packages: '["nvcc", "cudart", "visual_studio_integration"]'
+        sub-packages: '["nvcc", "cudart", "visual_studio_integration", "thrust", "libcudacxx"]'
 
     - name: Verify CUDA installation (REQUIRED)
       run: |
@@ -99,18 +99,19 @@ jobs:
         gcc --version
         g++ --version
 
-    - name: Setup CUDA Toolkit 12.1
-      uses: Jimver/cuda-toolkit@v0.2.24
-      id: cuda-toolkit
-      with:
-        cuda: '12.1.0'
-        method: 'local'
-        linux-local-args: '["--toolkit", "--silent", "--override"]'
+    - name: Install CUDA Toolkit via APT
+      run: |
+        wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb
+        sudo dpkg -i cuda-keyring_1.0-1_all.deb
+        sudo apt-get update
+        sudo apt-get install -y cuda-toolkit-12-1
+        echo "CUDA_PATH=/usr/local/cuda-12.1" >> $GITHUB_ENV
+        echo "/usr/local/cuda-12.1/bin" >> $GITHUB_PATH
+        echo "LD_LIBRARY_PATH=/usr/local/cuda-12.1/lib64:${LD_LIBRARY_PATH}" >> $GITHUB_ENV
 
     - name: Verify CUDA installation (REQUIRED)
       run: |
-        echo "Installed CUDA version: ${{steps.cuda-toolkit.outputs.cuda}}"
-        echo "CUDA install location: ${{steps.cuda-toolkit.outputs.CUDA_PATH}}"
+        export PATH=/usr/local/cuda-12.1/bin:$PATH
         nvcc -V
         if [ $? -ne 0 ]; then
           echo "❌ CUDA Toolkit 12.1+ is REQUIRED for building Pastella Miner"
@@ -122,7 +123,7 @@ jobs:
       run: |
         mkdir build
         cd build
-        cmake .. -DCMAKE_BUILD_TYPE=Release
+        cmake .. -DCMAKE_BUILD_TYPE=Release -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda-12.1
 
     - name: Build
       run: |
@@ -212,7 +213,7 @@ jobs:
         ## System Requirements
         - **Windows**: Windows 10/11 x64, CUDA 12.1+ (for GPU mining)
         - **Linux**: Ubuntu 20.04+, CUDA 12.1+ (for GPU mining)
-        - **Note**: This build was compiled with CUDA ${{steps.cuda-toolkit.outputs.cuda}}
+        - **Note**: This build was compiled with CUDA 12.1
 
         ## Downloads
         - \`pastella-miner-windows-x64.zip\` - Windows executable
