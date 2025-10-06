@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 # Use traditional CUDA support instead of modern CUDA language
-project(pastella-miner LANGUAGES CXX)
+project(pastella-miner LANGUAGES C CXX)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
