@@ -17,6 +17,11 @@ on:
         required: false
         type: string
         default: ''
+      release_notes:
+        description: 'Custom release notes (leave empty for auto-generated)'
+        required: false
+        type: string
+        default: ''
 
 jobs:
   build-windows:
@@ -195,54 +200,35 @@ jobs:
     - name: Generate release notes
       id: release_notes
       run: |
-        cat << EOF > release_notes.md
+        if [ -n "${{ github.event.inputs.release_notes }}" ]; then
+          # Use custom release notes from workflow input
+          cat << 'EOF' > release_notes.md
+        ${{ github.event.inputs.release_notes }}
+        EOF
+        else
+          # Generate default release notes
+          cat << EOF > release_notes.md
         # Pastella Miner Release
 
         **Version**: ${{ steps.get_version.outputs.version }}
         **Build Date**: $(date +'%Y-%m-%d %H:%M:%S UTC')
         **Commit**: ${{ github.sha }}
 
-        ## Features
-        - High-performance Velora PoW algorithm implementation
-        - CPU and GPU (CUDA) mining support
-        - Pool and daemon mining modes
-        - Automatic GPU detection and optimization
-        - Preset-based configuration (auto/maximum/balanced/lowpower)
-
         ## System Requirements
         - **Windows**: Windows 10/11 x64, CUDA 12.1+ (for GPU mining)
         - **Linux**: Ubuntu 20.04+, CUDA 12.1+ (for GPU mining)
-        - **Note**: This build was compiled with CUDA 12.1
 
         ## Downloads
         - \`pastella-miner-windows-x64.zip\` - Windows executable
         - \`pastella-miner-linux-x64.tar.gz\` - Linux executable
 
         ## Configuration
-        Edit \`config.json\` to configure mining settings. Available presets:
-        - \`auto\`: Automatically detect and optimize
-        - \`maximum\`: 85% VRAM usage (highest hashrate)
-        - \`balanced\`: 75% VRAM usage (recommended)
-        - \`lowpower\`: 60% VRAM usage (24/7 mining)
-
-        ## Usage
-        \`\`\`bash
-        # Show help
-        ./pastella-miner --help
-
-        # CPU benchmark
-        ./pastella-miner --benchmark
-
-        # GPU mining
-        ./pastella-miner -g --benchmark
-        \`\`\`
+        Edit \`config.json\` to configure your batch size. Higher batches increase memory usage but may improve performance. Maximum recommended: 500000.
 
         ## Changelog
-        - See commit history for detailed changes
-
-        ---
-        **Note**: This is a draft release. Review and edit before publishing.
+        -
         EOF
+        fi
         cat release_notes.md
 
     - name: Create draft release
@@ -256,7 +242,5 @@ jobs:
         files: |
           pastella-miner-windows-x64.zip
           pastella-miner-linux-x64.tar.gz
-          config.json
-          README.md
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
