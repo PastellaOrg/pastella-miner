@@ -21,6 +21,12 @@ if(CUDA_FOUND)
     set(CUDA_NVCC_FLAGS_DEBUG "-g -G")
     set(CUDA_NVCC_FLAGS_RELEASE "-O3")
 
+    # 🔧 VISUAL STUDIO 2022 COMPATIBILITY: Allow CUDA 12.1 to work with VS 2022
+    if(MSVC_VERSION GREATER_EQUAL 1930)
+        list(APPEND CUDA_NVCC_FLAGS "-allow-unsupported-compiler")
+        message(STATUS "⚙️  VS 2022 detected - adding -allow-unsupported-compiler flag for CUDA 12.1")
+    endif()
+
     # Include CUDA directories
     include_directories(${CUDA_INCLUDE_DIRS})
     link_directories(${CUDA_LIBRARY_DIRS})
