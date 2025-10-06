@@ -21,8 +21,8 @@ if(CUDA_FOUND)
     set(CUDA_NVCC_FLAGS_DEBUG "-g -G")
     set(CUDA_NVCC_FLAGS_RELEASE "-O3")
 
-    # Include CUDA directories
-    include_directories(${CUDA_INCLUDE_DIRS})
+    # Note: CUDA include directories will be added AFTER project includes
+    # to prevent CUDA headers from hijacking standard library includes
     link_directories(${CUDA_LIBRARY_DIRS})
 
     # Platform-specific CUDA configuration
@@ -34,17 +34,9 @@ if(CUDA_FOUND)
             message(STATUS "⚙️  VS 2022 detected - adding compatibility flags for CUDA 12.1")
         endif()
 
-        # Windows-specific: Add libcudacxx headers for <cuda/std/cstdint>
-        include_directories("C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.1/include")
-        include_directories("C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.1/include/cuda")
-        
         # Set CUDA library directories explicitly for Windows
         set(CUDA_LIBRARY_DIRS "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.1/lib/x64")
         link_directories(${CUDA_LIBRARY_DIRS})
-    else()
-        # Linux: CUDA paths are already set correctly by find_package
-        include_directories("${CUDA_TOOLKIT_ROOT_DIR}/include")
-        include_directories("${CUDA_TOOLKIT_ROOT_DIR}/include/cuda")
     endif()
 else()
     message(STATUS "⚠️  CUDA not available - building CPU-only version")
@@ -230,6 +222,18 @@ if(CUDA_FOUND)
         CUDA_SEPARABLE_COMPILATION OFF
         CUDA_RESOLVE_DEVICE_SYMBOLS OFF
     )
+
+    # Add CUDA include directories as SYSTEM includes (lower priority than standard library)
+    # This prevents CUDA from hijacking standard library includes like <atomic>
+    if(WIN32)
+        target_include_directories(pastella-miner SYSTEM PRIVATE
+            "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.1/include"
+        )
+    else()
+        target_include_directories(pastella-miner SYSTEM PRIVATE
+            ${CUDA_INCLUDE_DIRS}
+        )
+    endif()
 
     # Link CUDA runtime libraries
     target_link_libraries(pastella-miner ${CUDA_LIBRARIES})

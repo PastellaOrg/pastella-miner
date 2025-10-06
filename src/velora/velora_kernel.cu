@@ -1,6 +1,6 @@
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
-#include <cuda/std/cstdint>
+#include <cstdint>
 #include <cstdio>
 
 // 🚀 GPU SHA-256 IMPLEMENTATION for exact CPU pattern matching
