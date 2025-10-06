@@ -1,0 +1,229 @@
+name: Build Pastella Miner
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Create draft release'
+        required: true
+        type: boolean
+        default: false
+      release_tag:
+        description: 'Release tag (e.g., v1.0.0)'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Setup CUDA Toolkit
+      uses: Jimver/cuda-toolkit@v0.2.14
+      with:
+        cuda: '12.1.0'
+        method: 'network'
+        sub-packages: '["nvcc", "cudart", "visual_studio_integration"]'
+
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v1.3
+
+    - name: Configure CMake
+      run: |
+        mkdir build
+        cd build
+        cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
+
+    - name: Build
+      run: |
+        cd build
+        cmake --build . --config Release
+
+    - name: Test executable exists
+      run: |
+        if (Test-Path "build\Release\pastella-miner.exe") {
+          Write-Host "✅ Build successful - pastella-miner.exe found"
+          Get-Item "build\Release\pastella-miner.exe" | Select-Object Name, Length, LastWriteTime
+        } else {
+          Write-Host "❌ Build failed - pastella-miner.exe not found"
+          exit 1
+        }
+
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: pastella-miner-windows-x64
+        path: build/Release/pastella-miner.exe
+        retention-days: 30
+
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake build-essential libssl-dev
+
+    - name: Setup CUDA Toolkit
+      uses: Jimver/cuda-toolkit@v0.2.14
+      with:
+        cuda: '12.1.0'
+        method: 'network'
+
+    - name: Configure CMake
+      run: |
+        mkdir build
+        cd build
+        cmake .. -DCMAKE_BUILD_TYPE=Release
+
+    - name: Build
+      run: |
+        cd build
+        cmake --build . --config Release
+
+    - name: Test executable exists
+      run: |
+        if [ -f "build/pastella-miner" ]; then
+          echo "✅ Build successful - pastella-miner found"
+          ls -lh build/pastella-miner
+        else
+          echo "❌ Build failed - pastella-miner not found"
+          exit 1
+        fi
+
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: pastella-miner-linux-x64
+        path: build/pastella-miner
+        retention-days: 30
+
+  create-release:
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download Windows artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: pastella-miner-windows-x64
+        path: ./release/windows
+
+    - name: Download Linux artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: pastella-miner-linux-x64
+        path: ./release/linux
+
+    - name: Create release archives
+      run: |
+        cd release/windows
+        zip ../../pastella-miner-windows-x64.zip pastella-miner.exe
+        cd ../linux
+        chmod +x pastella-miner
+        tar -czf ../../pastella-miner-linux-x64.tar.gz pastella-miner
+        cd ../..
+        ls -lh pastella-miner-*
+
+    - name: Determine release tag
+      id: release_tag
+      run: |
+        if [ -n "${{ github.event.inputs.release_tag }}" ]; then
+          echo "tag=${{ github.event.inputs.release_tag }}" >> $GITHUB_OUTPUT
+        else
+          echo "tag=v$(date +'%Y.%m.%d')-build${{ github.run_number }}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Read version from config
+      id: get_version
+      run: |
+        VERSION=$(grep -oP '"version"\s*:\s*"\K[^"]+' config.json || echo "unknown")
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+    - name: Generate release notes
+      id: release_notes
+      run: |
+        cat << EOF > release_notes.md
+        # Pastella Miner Release
+
+        **Version**: ${{ steps.get_version.outputs.version }}
+        **Build Date**: $(date +'%Y-%m-%d %H:%M:%S UTC')
+        **Commit**: ${{ github.sha }}
+
+        ## Features
+        - High-performance Velora PoW algorithm implementation
+        - CPU and GPU (CUDA) mining support
+        - Pool and daemon mining modes
+        - Automatic GPU detection and optimization
+        - Preset-based configuration (auto/maximum/balanced/lowpower)
+
+        ## System Requirements
+        - **Windows**: Windows 10/11 x64, CUDA 12.1+ (for GPU mining)
+        - **Linux**: Ubuntu 20.04+, CUDA 12.1+ (for GPU mining)
+
+        ## Downloads
+        - \`pastella-miner-windows-x64.zip\` - Windows executable
+        - \`pastella-miner-linux-x64.tar.gz\` - Linux executable
+
+        ## Configuration
+        Edit \`config.json\` to configure mining settings. Available presets:
+        - \`auto\`: Automatically detect and optimize
+        - \`maximum\`: 85% VRAM usage (highest hashrate)
+        - \`balanced\`: 75% VRAM usage (recommended)
+        - \`lowpower\`: 60% VRAM usage (24/7 mining)
+
+        ## Usage
+        \`\`\`bash
+        # Show help
+        ./pastella-miner --help
+
+        # CPU benchmark
+        ./pastella-miner --benchmark
+
+        # GPU mining
+        ./pastella-miner -g --benchmark
+        \`\`\`
+
+        ## Changelog
+        - See commit history for detailed changes
+
+        ---
+        **Note**: This is a draft release. Review and edit before publishing.
+        EOF
+        cat release_notes.md
+
+    - name: Create draft release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.release_tag.outputs.tag }}
+        name: Pastella Miner ${{ steps.release_tag.outputs.tag }}
+        body_path: release_notes.md
+        draft: true
+        prerelease: false
+        files: |
+          pastella-miner-windows-x64.zip
+          pastella-miner-linux-x64.tar.gz
+          config.json
+          README.md
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

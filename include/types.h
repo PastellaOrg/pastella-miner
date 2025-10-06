@@ -19,8 +19,8 @@ using i64 = int64_t;
 // Velora algorithm constants
 namespace velora {
     constexpr u64 SCRATCHPAD_SIZE = 64 * 1024 * 1024;  // 64MB (as per specification)
-    constexpr u32 MEMORY_READS = 1000;  // 1000 reads per hash (as per specification)
-    constexpr u64 EPOCH_LENGTH = 10000;
+    constexpr u32 MEMORY_READS = 65536;  // 262,144 reads per hash (256K reads as requested)
+    constexpr u64 EPOCH_LENGTH = 2016;  // 2,016 blocks (Bitcoin-like difficulty adjustment period as per v1.0 specification)
     constexpr u32 SCRATCHPAD_WORDS = SCRATCHPAD_SIZE / 4;  // 16,777,216 words
 }
 

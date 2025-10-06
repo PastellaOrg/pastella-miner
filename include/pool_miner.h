@@ -64,6 +64,7 @@ private:
     // Share counters
     std::atomic<int> acceptedShares;
     std::atomic<int> rejectedShares;
+    std::atomic<int> lastSubmittedGpuId; // Track GPU ID of last submitted share for multi-GPU support
     
     // Request timing
     std::chrono::steady_clock::time_point lastSubmitTime;

@@ -28,6 +28,7 @@ using namespace pastella::utils;
 // ANSI Color codes
 const std::string COLOR_GREEN = "\033[32m";
 const std::string COLOR_RED = "\033[31m";
+const std::string COLOR_BLUE = "\033[34m";
 const std::string COLOR_WHITE_BOLD = "\033[1;37m";
 const std::string COLOR_WHITE = "\033[37m";
 const std::string COLOR_PURPLE = "\033[35m";
@@ -41,6 +42,7 @@ PoolMiner::PoolMiner()
     , currentDifficulty(1)
     , acceptedShares(0)
     , rejectedShares(0)
+    , lastSubmittedGpuId(0) // Default to GPU 0 for single GPU setups
     , socket_(-1)
     , messageId_(0)
     , miner_(nullptr)
@@ -230,14 +232,28 @@ std::string PoolMiner::receiveMessage() {
 
 void PoolMiner::messageHandler() {
     std::string messageBuffer;
+    
+    LOG_DEBUG("🔍 POOL: Message handler started", "POOL");
 
     while (connected) {
         std::string data = receiveMessage();
         if (data.empty()) {
+            // Add periodic logging to show message handler is still running
+            static int emptyCounter = 0;
+            emptyCounter++;
+            if (emptyCounter % 100 == 0) {  // Log every 10 seconds (100 * 100ms)
+                LOG_DEBUG("🔍 POOL: Message handler running, no messages received (connected: " + 
+                         std::to_string(connected) + ")", "POOL");
+            }
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             continue;
         }
 
+        // Reset counter when we receive data
+        static int emptyCounter = 0;
+        emptyCounter = 0;
+        
+        LOG_DEBUG("🔍 POOL: Received data from pool (" + std::to_string(data.length()) + " bytes)", "POOL");
         messageBuffer += data;
 
         // Process complete messages (newline-separated)
@@ -247,6 +263,7 @@ void PoolMiner::messageHandler() {
             messageBuffer.erase(0, pos + 1);
 
             if (!message.empty()) {
+                LOG_DEBUG("🔍 POOL: Processing message: " + message.substr(0, 100) + "...", "POOL");
                 processMessage(message);
             }
         }
@@ -267,6 +284,7 @@ void PoolMiner::processMessage(const std::string& message) {
     if (doc.HasMember("method")) {
         // Method call from server (like job notification)
         std::string method = doc["method"].GetString();
+        LOG_DEBUG("🔍 POOL: Processing method: " + method, "POOL");
 
         if (method == "job") {
             handleJobNotification(doc);
@@ -277,10 +295,14 @@ void PoolMiner::processMessage(const std::string& message) {
         }
     } else if (doc.HasMember("result")) {
         // Response to our request
+        LOG_DEBUG("🔍 POOL: Found result field - calling handleResponse()", "POOL");
         handleResponse(doc);
     } else if (doc.HasMember("error")) {
         // Error response
+        LOG_DEBUG("🔍 POOL: Found error field - calling handleError()", "POOL");
         handleError(doc);
+    } else {
+        LOG_DEBUG("🔍 POOL: Message has no method, result, or error field", "POOL");
     }
 }
 
@@ -310,7 +332,10 @@ bool PoolMiner::authorize() {
     request.AddMember("method", "login", allocator);
 
     rapidjson::Value params(rapidjson::kArrayType);
-    params.PushBack(rapidjson::Value(wallet.c_str(), allocator), allocator);
+    
+    // Send in conventional mining format: wallet.workername
+    std::string fullWorkerName = wallet + "." + workerName;
+    params.PushBack(rapidjson::Value(fullWorkerName.c_str(), allocator), allocator);
     params.PushBack(rapidjson::Value("x", allocator), allocator); // Password (not used)
     request.AddMember("params", params, allocator);
 
@@ -342,6 +367,7 @@ bool PoolMiner::submitSolution(u32 nonce, const std::string& hash) {
 }
 
 void PoolMiner::handleJobNotification(const rapidjson::Document& doc) {
+    LOG_DEBUG("🔍 POOL: handleJobNotification() called", "POOL");
     if (!doc.HasMember("params") || !doc["params"].IsObject()) {
         LOG_ERROR_CAT("Invalid job notification format", "POOL");
         return;
@@ -355,8 +381,14 @@ void PoolMiner::handleJobNotification(const rapidjson::Document& doc) {
     }
 
     // Update current work with structured data
-    currentWork.jobId = params["job_id"].GetString();
-    currentWork.height = params["height"].GetUint();
+    std::string newJobId = params["job_id"].GetString();
+    u32 newHeight = params["height"].GetUint();
+    
+    LOG_DEBUG("🔍 POOL: New job - ID: " + newJobId + ", height: " + std::to_string(newHeight) + 
+             " (previous: " + currentWork.jobId + ", " + std::to_string(currentWork.height) + ")", "POOL");
+    
+    currentWork.jobId = newJobId;
+    currentWork.height = newHeight;
 
     // Extract structured job data with detailed logging
     if (params.HasMember("timestamp")) {
@@ -419,11 +451,17 @@ void PoolMiner::startMiningJob() {
     header.algorithm = "velora";
 
     // Stop current mining and start new job
+    LOG_DEBUG("🔍 POOL: About to call stopMining() for new job " + currentWork.jobId, "POOL");
     miner_->stopMining();
+    LOG_DEBUG("🔍 POOL: About to call updateBlockTemplate() for job " + currentWork.jobId, "POOL");
     miner_->updateBlockTemplate(header);
+    LOG_DEBUG("🔍 POOL: About to call setDifficulty() for job " + currentWork.jobId, "POOL");
     miner_->setDifficulty(currentWork.poolDifficulty);
+    LOG_DEBUG("🔍 POOL: About to call startMining() for job " + currentWork.jobId, "POOL");
     if (!miner_->startMining()) {
         LOG_ERROR_CAT("Failed to start mining for job " + currentWork.jobId, "POOL");
+    } else {
+        LOG_DEBUG("🔍 POOL: Mining started successfully for job " + currentWork.jobId, "POOL");
     }
 }
 
@@ -455,24 +493,23 @@ void PoolMiner::handleSetDifficulty(const rapidjson::Document& doc) {
     // Apply new difficulty to miner if active
     if (miner_ && miningActive) {
         miner_->setDifficulty(newDifficulty);
-        LOG_INFO_CAT("Pool difficulty adjusted: " + std::to_string(oldDifficulty) + " -> " + 
-                 std::to_string(newDifficulty), "POOL");
-    } else {
-        LOG_INFO_CAT("Pool difficulty updated: " + std::to_string(oldDifficulty) + " -> " + 
-                 std::to_string(newDifficulty) + " (will apply when mining starts)", "POOL");
     }
 }
 
 void PoolMiner::handleResponse(const rapidjson::Document& doc) {
+    LOG_DEBUG("🔍 POOL: handleResponse() called - processing pool response", "POOL");
 
     if (doc.HasMember("id") && doc.HasMember("result")) {
         int id = doc["id"].GetInt();
         bool result = doc["result"].IsBool() ? doc["result"].GetBool() : false;
 
+        LOG_DEBUG("🔍 POOL: Response ID: " + std::to_string(id) + ", result type: " + 
+                 (doc["result"].IsObject() ? "object" : doc["result"].IsBool() ? "bool" : "other"), "POOL");
 
         // Handle specific responses based on message ID or content
         if (doc["result"].IsObject()) {
             const auto& resultObj = doc["result"];
+            LOG_DEBUG("🔍 POOL: Processing object result", "POOL");
 
             // Check for job first (login response)
             if (resultObj.HasMember("job")) {
@@ -497,9 +534,12 @@ void PoolMiner::handleResponse(const rapidjson::Document& doc) {
                     // Reset waiting flag for new job
                     waitingForBlock = false;
 
-                    // Start mining with the structured data
-                    if (miner_ && miningActive) {
+                    // Start mining with the structured data (only if not already mining)
+                    if (miner_ && miningActive && !miner_->isMining()) {
+                        LOG_DEBUG("🔍 POOL: Starting mining from login response for job " + currentWork.jobId, "POOL");
                         startMiningJob();
+                    } else if (miner_ && miner_->isMining()) {
+                        LOG_DEBUG("🔍 POOL: Skipping startMiningJob() - already mining job " + currentWork.jobId, "POOL");
                     }
                     return; // Exit after processing job
                 }
@@ -508,29 +548,44 @@ void PoolMiner::handleResponse(const rapidjson::Document& doc) {
             // Handle submit response with status (only if no job was processed)
             if (resultObj.HasMember("status")) {
                 std::string status = resultObj["status"].GetString();
+                LOG_DEBUG("🔍 POOL: Found status field: " + status, "POOL");
 
                 if (status == "WAIT") {
-                    // Block solution submitted log removed for cleaner output
+                    LOG_DEBUG("🔍 POOL: Received WAIT status - stopping mining and waiting for new block", "POOL");
                     waitingForBlock = true;
                     if (miner_) {
+                        LOG_DEBUG("🚨 POOL: WAIT response triggering stopMining() - this may be the cause of immediate stop!", "POOL");
                         miner_->stopMining();
                     }
                 } else if (status == "OK") {
+                    LOG_DEBUG("🔍 POOL: Processing OK status - share accepted!", "POOL");
                     acceptedShares++;
                     if (miner_) {
-                        miner_->incrementAcceptedShares(0); // Update VeloraMiner share count (assume GPU 0)
+                        int gpuId = lastSubmittedGpuId.load();
+                        miner_->incrementAcceptedShares(gpuId);
                     }
                     auto now = std::chrono::steady_clock::now();
                     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastSubmitTime).count();
                     
+                    int gpuId = lastSubmittedGpuId.load();
+                    std::string gpuText = (gpuId >= 0) ? " " + COLOR_BLUE + "(GPU" + std::to_string(gpuId) + ")" + COLOR_RESET : " " + COLOR_BLUE + "(CPU)" + COLOR_RESET;
+                    
                     LOG_INFO_CAT(COLOR_GREEN + "Share accepted " + COLOR_WHITE_BOLD + "(" + 
                             std::to_string(acceptedShares.load()) + " / " + std::to_string(rejectedShares.load()) + ") " +
                             COLOR_RESET + "difficulty: " + std::to_string(currentWork.poolDifficulty) + " " +
-                            COLOR_DARK_GRAY + "(" + std::to_string(duration) + "ms)" + COLOR_RESET, "POOL");
+                            COLOR_DARK_GRAY + "(" + std::to_string(duration) + "ms)" + COLOR_RESET + gpuText, "POOL");
+                } else {
+                    LOG_DEBUG("🔍 POOL: Unknown status: " + status, "POOL");
                 }
                 return;
+            } else {
+                LOG_DEBUG("🔍 POOL: Object result has no status field", "POOL");
             }
+        } else {
+            LOG_DEBUG("🔍 POOL: Result is not an object (may be boolean or other type)", "POOL");
         }
+    } else {
+        LOG_DEBUG("🔍 POOL: Response missing id or result fields", "POOL");
     }
 }
 
@@ -545,15 +600,19 @@ void PoolMiner::handleError(const rapidjson::Document& doc) {
             if (message.find("share") != std::string::npos || message.find("Invalid") != std::string::npos) {
                 rejectedShares++;
                 if (miner_) {
-                    miner_->incrementRejectedShares(0); // Update VeloraMiner share count (assume GPU 0)
+                    int gpuId = lastSubmittedGpuId.load();
+                    miner_->incrementRejectedShares(gpuId);
                 }
                 auto now = std::chrono::steady_clock::now();
                 auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastSubmitTime).count();
                 
+                int gpuId = lastSubmittedGpuId.load();
+                std::string gpuText = (gpuId >= 0) ? " " + COLOR_BLUE + "(GPU" + std::to_string(gpuId) + ")" + COLOR_RESET : " " + COLOR_BLUE + "(CPU)" + COLOR_RESET;
+                
                 LOG_ERROR_CAT(COLOR_RED + "Share rejected " + COLOR_WHITE_BOLD + "(" + 
                          std::to_string(acceptedShares.load()) + " / " + std::to_string(rejectedShares.load()) + ") " +
                          COLOR_RESET + "difficulty: " + std::to_string(currentWork.poolDifficulty) + " " +
-                         COLOR_DARK_GRAY + "(" + std::to_string(duration) + "ms)" + COLOR_RESET, "POOL");
+                         COLOR_DARK_GRAY + "(" + std::to_string(duration) + "ms)" + COLOR_RESET + gpuText, "POOL");
             } else {
                 LOG_ERROR_CAT("Pool error " + std::to_string(code) + ": " + message, "POOL");
             }
@@ -624,17 +683,22 @@ void PoolMiner::onHashFound(const MiningResult& result) {
     if (result.timestamp != currentWork.timestamp) {
         rejectedShares++;
         if (miner_) {
-            miner_->incrementRejectedShares(); // Update VeloraMiner share count
+            // Use GPU ID from result for multi-GPU support
+            int gpuId = (result.gpuId >= 0) ? result.gpuId : 0;
+            miner_->incrementRejectedShares(gpuId);
         }
+        std::string gpuText = (result.gpuId >= 0) ? " " + COLOR_BLUE + "(GPU" + std::to_string(result.gpuId) + ")" + COLOR_RESET : " " + COLOR_BLUE + "(CPU)" + COLOR_RESET;
+        
         LOG_ERROR_CAT(COLOR_RED + "Share rejected " + COLOR_WHITE_BOLD + "(" + 
                  std::to_string(acceptedShares.load()) + " / " + std::to_string(rejectedShares.load()) + ") " +
                  COLOR_RESET + "difficulty: " + std::to_string(currentWork.poolDifficulty) + " " +
-                 COLOR_DARK_GRAY + "(0ms)" + COLOR_RESET, "POOL");
+                 COLOR_DARK_GRAY + "(0ms)" + COLOR_RESET + gpuText, "POOL");
         return;
     }
 
     if (meetsBlockDifficulty) {
-        LOG_INFO_CAT("BLOCK SOLUTION! Nonce: " + std::to_string(result.nonce), "POOL");
+        std::string gpuText = (result.gpuId >= 0) ? " " + COLOR_BLUE + "(GPU" + std::to_string(result.gpuId) + ")" + COLOR_RESET : " " + COLOR_BLUE + "(CPU)" + COLOR_RESET;
+        LOG_INFO_CAT("BLOCK SOLUTION! Nonce: " + std::to_string(result.nonce) + gpuText, "POOL");
     }
 
     // Check if we're waiting for block processing
@@ -644,6 +708,10 @@ void PoolMiner::onHashFound(const MiningResult& result) {
 
     // Submit solution to pool
     lastSubmitTime = std::chrono::steady_clock::now();
+    
+    // Store GPU ID for later use in response handling
+    lastSubmittedGpuId.store(result.gpuId >= 0 ? result.gpuId : 0);
+    
     submitSolution(result.nonce, hashHex);
 }
 

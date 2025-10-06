@@ -87,6 +87,7 @@ struct MiningResult {
 
     // 🎯 MINING SYSTEM IDENTIFICATION: Track which system found the block
     std::string miningSystem; // "GPU" or "CPU"
+    int gpuId; // GPU ID for multi-GPU setups (-1 for CPU)
 };
 
 /**

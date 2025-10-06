@@ -6,6 +6,8 @@
 #include <iostream>
 #include <atomic>
 #include <thread>
+#include <sstream>
+#include <iomanip>
 
 namespace pastella {
 namespace velora {
@@ -210,7 +212,9 @@ void VeloraMiner::stopMining() {
     if (!mining_) {
         LOG_DEBUG("Stop requested while not mining - ensuring threads are joined", "VELORA");
     } else {
-        LOG_DEBUG("Stopping mining - setting shouldStop flag", "VELORA");
+        LOG_DEBUG("🚨 STOPPING MINING - setting shouldStop flag (called from external code)", "VELORA");
+        // Add stack trace or caller identification for debugging
+        LOG_DEBUG("🔍 stopMining() called - this indicates pool job change or external stop", "VELORA");
     }
     shouldStop_ = true;
     mining_ = false;
@@ -336,11 +340,6 @@ double VeloraMiner::getCurrentHashrate() const {
                 double gpuHashrate = static_cast<double>(totalNonces) * 1000.0 / static_cast<double>(totalRunningTimeMs);
                 totalHashrate += gpuHashrate;
                 
-                LOG_INFO_CAT("GPU" + std::to_string(gpuIndex) + " hashrate calc: " + 
-                           std::to_string(completedBatches) + " batches × " + 
-                           std::to_string(noncesPerBatch) + " nonces ÷ " + 
-                           std::to_string(totalRunningTimeMs) + "ms = " + 
-                           std::to_string(gpuHashrate) + " H/s", "VELORA");
             }
         }
         
@@ -579,12 +578,16 @@ void VeloraMiner::updateBlockTemplate(const BlockHeader& newHeader) {
     // 🎯 FINAL SAFETY: Brief pause to ensure all updates are visible across threads
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     
+    // 🎯 CRITICAL BUG FIX: Reset shouldStop flag to allow new mining to start
+    // This was the root cause of immediate mining stoppage
+    shouldStop_ = false;
+    blockFoundByAnySystem_.store(false);
 
     // Reset mining state for new block (but NOT batch timing data!)
     currentNonce_.store(0);
     // DON'T reset hashesProcessed_ or timing - we want to track cumulative performance
 
-    LOG_DEBUG("🔒 COORDINATED MINING: Block template updated, all mining stopped for new block " +
+    LOG_DEBUG("🔒 COORDINATED MINING: Block template updated, ready for new mining session for block " +
              std::to_string(newHeader.index), "VELORA");
 }
 
@@ -691,6 +694,7 @@ void VeloraMiner::miningWorker(u32 threadIndex) {
 
                 // 🎯 MINING SYSTEM IDENTIFICATION: Mark as CPU-found block
                 result.miningSystem = "CPU";
+                result.gpuId = -1; // CPU mining
 
                 if (hashFoundCallback_) {
                     hashFoundCallback_(result);
@@ -968,10 +972,118 @@ void VeloraMiner::gpuMiningWorker(size_t gpuIndex) {
 
                     // 🎯 MINING SYSTEM IDENTIFICATION: Mark as GPU-found block
                     result.miningSystem = "GPU #" + std::to_string(gpuIndex);
+                    result.gpuId = static_cast<int>(gpuIndex);
 
                     // 🚀 CRITICAL FIX: Use GPU-calculated accumulator instead of recalculating
                     // This ensures the miner and daemon use the exact same 96-byte hash input
                     u32 gpuAccumulator = batchResults[i].accumulator;
+
+                    // 🎯 GPU FINAL HASH DEBUG - Match daemon format exactly WITH CORRECT WINNING NONCE
+                    LOG_DEBUG("=== 🎯 MINER FINAL HASH - 96-BYTE INPUT DEBUG ===", "BLOCK");
+
+                    // Show detailed buffer debug for the WINNING nonce (not batch template)
+                    {
+                        std::vector<u8> nonceLE64 = pastella::utils::CryptoUtils::toLittleEndian(result.nonce);
+                        std::vector<u8> timestampLE64 = pastella::utils::CryptoUtils::toLittleEndian(batchTimestamp);
+
+                        std::stringstream debug;
+                        debug << "=== BUFFER DEBUG ===";
+                        LOG_DEBUG(debug.str(), "BLOCK");
+
+                        debug.str("");
+                        debug << "Nonce: " << result.nonce << ", Nonce Buffer (hex): ";
+                        for (u8 byte : nonceLE64) {
+                            debug << std::hex << std::setfill('0') << std::setw(2) << static_cast<u32>(byte);
+                        }
+                        LOG_DEBUG(debug.str(), "BLOCK");
+
+                        debug.str("");
+                        debug << std::dec << "Timestamp: " << batchTimestamp << ", Timestamp Buffer (hex): ";
+                        for (u8 byte : timestampLE64) {
+                            debug << std::hex << std::setfill('0') << std::setw(2) << static_cast<u32>(byte);
+                        }
+                        LOG_DEBUG(debug.str(), "BLOCK");
+
+                        debug.str("");
+                        debug << "=== END BUFFER DEBUG ===";
+                        LOG_DEBUG(debug.str(), "BLOCK");
+
+                        // Show first 10 mix operations with CORRECT nonce values
+                        for (int mixIdx = 0; mixIdx < 10; mixIdx++) {
+                            u32 nonceWordIndex = mixIdx % 4;
+                            u32 timestampWordIndex = mixIdx % 4;
+
+                            // Read 32-bit words from the buffers (with zero-padding if needed)
+                            u32 nonceWord = 0;
+                            u32 timestampWord = 0;
+
+                            if (nonceWordIndex * 4 < nonceLE64.size()) {
+                                for (int byteIdx = 0; byteIdx < 4 && (nonceWordIndex * 4 + byteIdx) < nonceLE64.size(); byteIdx++) {
+                                    nonceWord |= static_cast<u32>(nonceLE64[nonceWordIndex * 4 + byteIdx]) << (byteIdx * 8);
+                                }
+                            }
+
+                            if (timestampWordIndex * 4 < timestampLE64.size()) {
+                                for (int byteIdx = 0; byteIdx < 4 && (timestampWordIndex * 4 + byteIdx) < timestampLE64.size(); byteIdx++) {
+                                    timestampWord |= static_cast<u32>(timestampLE64[timestampWordIndex * 4 + byteIdx]) << (byteIdx * 8);
+                                }
+                            }
+
+                            debug.str("");
+                            debug << std::dec << "  Mix[" << mixIdx << "]: nonceIndex=" << nonceWordIndex
+                                  << ", nonceWord=0x" << std::hex << std::setfill('0') << std::setw(8) << nonceWord
+                                  << ", timestampIndex=" << std::dec << timestampWordIndex
+                                  << ", timestampWord=0x" << std::hex << std::setfill('0') << std::setw(8) << timestampWord;
+                            LOG_DEBUG(debug.str(), "BLOCK");
+                        }
+                    }
+
+                    {
+                        std::stringstream debug;
+                        debug << std::dec << "Block number: " << batchBlockIndex;
+                        LOG_DEBUG(debug.str(), "BLOCK");
+                    }
+                    {
+                        std::stringstream debug;
+                        debug << "Nonce: " << result.nonce;
+                        LOG_DEBUG(debug.str(), "BLOCK");
+                    }
+                    {
+                        std::stringstream debug;
+                        debug << "Timestamp: " << batchTimestamp;
+                        LOG_DEBUG(debug.str(), "BLOCK");
+                    }
+                    {
+                        std::stringstream debug;
+                        debug << "Previous hash: " << batchPrevHash;
+                        LOG_DEBUG(debug.str(), "BLOCK");
+                    }
+                    {
+                        std::stringstream debug;
+                        debug << "Merkle root: " << batchMerkleRoot;
+                        LOG_DEBUG(debug.str(), "BLOCK");
+                    }
+                    {
+                        std::stringstream debug;
+                        debug << "Difficulty: " << batchDifficulty;
+                        LOG_DEBUG(debug.str(), "BLOCK");
+                    }
+                    {
+                        std::stringstream debug;
+                        debug << "Accumulator: " << gpuAccumulator;
+                        LOG_DEBUG(debug.str(), "BLOCK");
+                    }
+                    {
+                        std::stringstream debug;
+                        debug << "Final data length: 96 bytes (should be 96)";
+                        LOG_DEBUG(debug.str(), "BLOCK");
+                    }
+                    {
+                        std::stringstream debug;
+                        debug << "Miner computed hash: " << pastella::utils::CryptoUtils::hashToHex(result.hash);
+                        LOG_DEBUG(debug.str(), "BLOCK");
+                    }
+                    LOG_DEBUG("=== END MINER FINAL HASH DEBUG ===", "BLOCK");
 
                     if (hashFoundCallback_) {
                         hashFoundCallback_(result);
@@ -1355,23 +1467,32 @@ void VeloraMiner::displayHashrate() const {
         }
         
         if (activeGPUCount > 0) {
-            // Distribute total hashrate evenly across active GPUs for now
-            double perGPUHashrate = totalHashrate / static_cast<double>(activeGPUCount);
+            // Get individual GPU hashrates instead of dividing total
+            std::vector<double> gpuHashrates = getIndividualGPUHashrates();
             
             for (int i = 0; i < activeGPUCount && i < 8; ++i) { // Safety limit to max 8 GPUs
                 u64 accepted = (i < gpuAccepted.size()) ? gpuAccepted[i] : 0;
                 u64 rejected = (i < gpuRejected.size()) ? gpuRejected[i] : 0;
                 
-                // Format hashrate with safety checks
+                // Get individual GPU hashrate or fallback to 0
+                double perGPUHashrate = (i < static_cast<int>(gpuHashrates.size())) ? gpuHashrates[i] : 0.0;
+                
+                // Format hashrate with 2 decimal places and safety checks
                 std::string hashrateStr;
                 if (perGPUHashrate < 0 || perGPUHashrate > 1e12) {
-                    hashrateStr = "0 H/s"; // Safety fallback for invalid values
+                    hashrateStr = "0.00 H/s"; // Safety fallback for invalid values
                 } else if (perGPUHashrate >= 1000000.0) {
-                    hashrateStr = std::to_string(static_cast<int>(perGPUHashrate / 1000000.0)) + " MH/s";
+                    std::ostringstream oss;
+                    oss << std::fixed << std::setprecision(2) << (perGPUHashrate / 1000000.0) << " MH/s";
+                    hashrateStr = oss.str();
                 } else if (perGPUHashrate >= 1000.0) {
-                    hashrateStr = std::to_string(static_cast<int>(perGPUHashrate / 1000.0)) + " KH/s";
+                    std::ostringstream oss;
+                    oss << std::fixed << std::setprecision(2) << (perGPUHashrate / 1000.0) << " KH/s";
+                    hashrateStr = oss.str();
                 } else {
-                    hashrateStr = std::to_string(static_cast<int>(perGPUHashrate)) + " H/s";
+                    std::ostringstream oss;
+                    oss << std::fixed << std::setprecision(2) << perGPUHashrate << " H/s";
+                    hashrateStr = oss.str();
                 }
                 
                 // Create GPU line with colored numbers
@@ -1416,16 +1537,22 @@ void VeloraMiner::displayHashrate() const {
             LOG_INFO_CAT(deviceLine, "MINER");
         }
         
-        // Total line
+        // Total line with 2 decimal places
         std::string totalHashrateStr;
         if (totalHashrate < 0 || totalHashrate > 1e12) {
-            totalHashrateStr = "0 H/s"; // Safety fallback for invalid values
+            totalHashrateStr = "0.00 H/s"; // Safety fallback for invalid values
         } else if (totalHashrate >= 1000000.0) {
-            totalHashrateStr = std::to_string(static_cast<int>(totalHashrate / 1000000.0)) + " MH/s";
+            std::ostringstream oss;
+            oss << std::fixed << std::setprecision(2) << (totalHashrate / 1000000.0) << " MH/s";
+            totalHashrateStr = oss.str();
         } else if (totalHashrate >= 1000.0) {
-            totalHashrateStr = std::to_string(static_cast<int>(totalHashrate / 1000.0)) + " KH/s";
+            std::ostringstream oss;
+            oss << std::fixed << std::setprecision(2) << (totalHashrate / 1000.0) << " KH/s";
+            totalHashrateStr = oss.str();
         } else {
-            totalHashrateStr = std::to_string(static_cast<int>(totalHashrate)) + " H/s";
+            std::ostringstream oss;
+            oss << std::fixed << std::setprecision(2) << totalHashrate << " H/s";
+            totalHashrateStr = oss.str();
         }
         
         std::string totalLine = COLOR_YELLOW + "Total: " + totalHashrateStr + COLOR_RESET;
@@ -1469,8 +1596,8 @@ void VeloraMiner::startPeriodicHashrateDisplay() {
                 displayHashrate();
             }
             
-            // Sleep for 10 seconds, but check every second if we should stop
-            for (int i = 0; i < 10 && displayHashrateActive_.load(); ++i) {
+            // Sleep for 60 seconds, but check every second if we should stop
+            for (int i = 0; i < 60 && displayHashrateActive_.load(); ++i) {
                 std::this_thread::sleep_for(std::chrono::seconds(1));
             }
         }

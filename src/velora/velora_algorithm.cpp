@@ -246,6 +246,20 @@ u32 VeloraAlgorithm::executeMemoryWalk(const std::vector<u32>& pattern, u64 nonc
         return ss.str();
     };
 
+    // Log buffer debug info
+    LOG_DEBUG("=== BUFFER DEBUG ===", "BLOCK");
+    {
+        std::stringstream debug;
+        debug << "Nonce: " << nonce << ", Nonce Buffer (hex): " << toHex(nonceBuffer);
+        LOG_DEBUG(debug.str(), "BLOCK");
+    }
+    {
+        std::stringstream debug;
+        debug << "Timestamp: " << timestamp << ", Timestamp Buffer (hex): " << toHex(timestampBuffer);
+        LOG_DEBUG(debug.str(), "BLOCK");
+    }
+    LOG_DEBUG("=== END BUFFER DEBUG ===", "BLOCK");
+
     for (u32 i = 0; i < pattern.size(); i++) {
         u32 readPos = pattern[i] % velora::SCRATCHPAD_WORDS;
         u32 value = scratchpad_[readPos];
@@ -293,6 +307,16 @@ u32 VeloraAlgorithm::executeMemoryWalk(const std::vector<u32>& pattern, u64 nonc
 
 
         accumulator = (accumulator ^ nonceWord ^ timestampWord) & 0xFFFFFFFF;
+
+        // Log mix debug for first 10 iterations
+        if (i < 10) {
+            std::stringstream debug;
+            debug << "  Mix[" << i << "]: nonceIndex=" << nonceIndex << ", nonceWord=0x"
+                  << std::hex << std::setfill('0') << std::setw(8) << nonceWord
+                  << ", timestampIndex=" << timestampIndex << ", timestampWord=0x"
+                  << std::setfill('0') << std::setw(8) << timestampWord;
+            LOG_DEBUG(debug.str(), "BLOCK");
+        }
     }
 
     std::stringstream ss;
@@ -315,16 +339,39 @@ Hash256 VeloraAlgorithm::generateHashCPU(u64 blockNumber, u64 nonce, u64 timesta
         // CRITICAL: Generate pattern for THIS specific nonce, not just once per block
         std::vector<u32> pattern = generateMemoryPattern(blockNumber, nonce, timestamp, previousHash, merkleRoot, difficulty);
 
+        // Log algorithm parameters and pattern debug info
+        {
+            std::stringstream debug;
+            debug << "VELORA ALGORITHM PARAMETERS: MEMORY_READS=" << velora::MEMORY_READS
+                  << ", EPOCH_LENGTH=" << velora::EPOCH_LENGTH
+                  << ", SCRATCHPAD_SIZE=" << (velora::SCRATCHPAD_SIZE / (1024*1024)) << "MB";
+            LOG_DEBUG(debug.str(), "VELORA");
+        }
+
+        // Log pattern first 10 elements
+        {
+            std::stringstream debug;
+            debug << "Pattern first 10 elements: ";
+            for (int i = 0; i < 10 && i < pattern.size(); i++) {
+                if (i > 0) debug << ", ";
+                debug << pattern[i];
+            }
+            LOG_DEBUG(debug.str(), "BLOCK");
+        }
+
 
         // Step 3: Execute memory walk with timestamp mixing
         u32 accumulator = executeMemoryWalk(pattern, nonce, timestamp);
 
         // INFO LOGGING: CPU path scratchpad comparison
-        //printf("=== MINER INFO: CPU SCRATCHPAD COMPARISON ===\n");
+        LOG_DEBUG("=== SCRATCHPAD COMPARISON DEBUG ===", "BLOCK");
         for (u32 i = 0; i < 20 && i < scratchpad_.size(); i++) {
-            //printf("Scratchpad[%u] = 0x%08x (%u)\n", i, static_cast<u32>(scratchpad_[i]), static_cast<u32>(scratchpad_[i]));
+            std::stringstream debug;
+            debug << "Scratchpad[" << i << "] = 0x" << std::hex << std::setfill('0') << std::setw(8)
+                  << static_cast<u32>(scratchpad_[i]) << " (" << std::dec << static_cast<u32>(scratchpad_[i]) << ")";
+            LOG_DEBUG(debug.str(), "BLOCK");
         }
-        //printf("=== END CPU SCRATCHPAD COMPARISON ===\n");
+        LOG_DEBUG("=== END SCRATCHPAD COMPARISON DEBUG ===", "BLOCK");
 
         // CPU DEBUG: Show accumulator computation details
         //printf("=== CPU ACCUMULATOR COMPUTATION ===\n");
@@ -385,35 +432,72 @@ Hash256 VeloraAlgorithm::generateFinalHash(u64 blockNumber, u64 nonce, u64 times
 
 
 
-    printf("=== 🎯 MINER FINAL HASH - 96-BYTE INPUT DEBUG ===\n");
-    printf("Block number: %llu\n", blockNumber);
-    printf("Nonce: %llu\n", nonce);
-    printf("Timestamp: %llu\n", timestamp);
-    printf("Previous hash: %s\n", utils::CryptoUtils::hashToHex(previousHash).c_str());
-    printf("Merkle root: %s\n", utils::CryptoUtils::hashToHex(merkleRoot).c_str());
-    printf("Difficulty: %u\n", difficulty);
-    printf("Accumulator: %u\n", accumulator);
-    printf("Final data length: %zu bytes (should be 96)\n", finalInput.size());
+    LOG_DEBUG("=== 🎯 DAEMON FINAL HASH - 96-BYTE INPUT DEBUG ===", "BLOCK");
+    {
+        std::stringstream debug;
+        debug << "Block number: " << blockNumber;
+        LOG_DEBUG(debug.str(), "BLOCK");
+    }
+    {
+        std::stringstream debug;
+        debug << "Nonce: " << nonce;
+        LOG_DEBUG(debug.str(), "BLOCK");
+    }
+    {
+        std::stringstream debug;
+        debug << "Timestamp: " << timestamp;
+        LOG_DEBUG(debug.str(), "BLOCK");
+    }
+    {
+        std::stringstream debug;
+        debug << "Previous hash: " << utils::CryptoUtils::hashToHex(previousHash);
+        LOG_DEBUG(debug.str(), "BLOCK");
+    }
+    {
+        std::stringstream debug;
+        debug << "Merkle root: " << utils::CryptoUtils::hashToHex(merkleRoot);
+        LOG_DEBUG(debug.str(), "BLOCK");
+    }
+    {
+        std::stringstream debug;
+        debug << "Difficulty: " << difficulty;
+        LOG_DEBUG(debug.str(), "BLOCK");
+    }
+    {
+        std::stringstream debug;
+        debug << "Accumulator: " << accumulator;
+        LOG_DEBUG(debug.str(), "BLOCK");
+    }
+    {
+        std::stringstream debug;
+        debug << "Final data length: " << finalInput.size() << " bytes (should be 96)";
+        LOG_DEBUG(debug.str(), "BLOCK");
+    }
 
     // Show exact 96-byte input data as hex (matching daemon format)
-    printf("=== EXACT 96-BYTE INPUT FOR SHA-256 (MINER) ===\n");
-    for (size_t i = 0; i < finalInput.size(); i++) {
-        printf("%02x", finalInput[i]);
-        if ((i + 1) % 16 == 0) {
-            printf("\n");
-        } else if ((i + 1) % 8 == 0) {
-            printf(" ");
+    LOG_DEBUG("=== EXACT 96-BYTE INPUT FOR SHA-256 (MINER) ===", "BLOCK");
+
+    // Format exactly like daemon: 16 bytes per line with space after 8 bytes
+    for (size_t i = 0; i < finalInput.size(); i += 16) {
+        std::stringstream line;
+        for (size_t j = 0; j < 16 && (i + j) < finalInput.size(); j++) {
+            if (j == 8) line << " ";  // Space after 8 bytes
+            line << std::hex << std::setfill('0') << std::setw(2) << static_cast<unsigned int>(finalInput[i + j]);
         }
+        LOG_DEBUG(line.str(), "BLOCK");
     }
-    if (finalInput.size() % 16 != 0) printf("\n");
-    printf("=== END 96-BYTE INPUT (MINER) ===\n");
+    LOG_DEBUG("=== END 96-BYTE INPUT (MINER) ===", "BLOCK");
 
     // Final hash = SHA256 of the combined input (matches Node.js implementation exactly)
     Hash256 result = utils::CryptoUtils::sha256(finalInput);
 
     std::string resultHex = utils::CryptoUtils::hashToHex(result);
-    printf("Miner computed hash: %s\n", resultHex.c_str());
-    printf("=== END MINER FINAL HASH DEBUG ===\n");
+    {
+        std::stringstream debug;
+        debug << "Miner computed hash: " << resultHex;
+        LOG_DEBUG(debug.str(), "BLOCK");
+    }
+    LOG_DEBUG("=== END MINER FINAL HASH DEBUG ===", "BLOCK");
 
     return result;
 }
@@ -508,6 +592,25 @@ std::vector<Hash256> VeloraAlgorithm::generateHashBatchGPU(u64 blockNumber, u64 
             cudaMemcpy(d_scratchpad_, scratchpad_.data(), cudaScratchpadSize_, cudaMemcpyHostToDevice);
         }
 
+        // Log algorithm parameters and scratchpad debug info for GPU mining
+        {
+            std::stringstream debug;
+            debug << "VELORA ALGORITHM PARAMETERS: MEMORY_READS=" << velora::MEMORY_READS
+                  << ", EPOCH_LENGTH=" << velora::EPOCH_LENGTH
+                  << ", SCRATCHPAD_SIZE=" << (velora::SCRATCHPAD_SIZE / (1024*1024)) << "MB";
+            LOG_DEBUG(debug.str(), "VELORA");
+        }
+
+        // Log scratchpad comparison for GPU mining
+        LOG_DEBUG("=== SCRATCHPAD COMPARISON DEBUG ===", "BLOCK");
+        for (u32 i = 0; i < 20 && i < scratchpad_.size(); i++) {
+            std::stringstream debug;
+            debug << "Scratchpad[" << i << "] = 0x" << std::hex << std::setfill('0') << std::setw(8)
+                  << static_cast<u32>(scratchpad_[i]) << " (" << std::dec << static_cast<u32>(scratchpad_[i]) << ")";
+            LOG_DEBUG(debug.str(), "BLOCK");
+        }
+        LOG_DEBUG("=== END SCRATCHPAD COMPARISON DEBUG ===", "BLOCK");
+
         if (batch_count == 0) return {};
 
         // 🚀 TIER 3 OPTIMIZATION: Continuous GPU Pipeline + Ultra-Smooth Utilization
@@ -522,6 +625,13 @@ std::vector<Hash256> VeloraAlgorithm::generateHashBatchGPU(u64 blockNumber, u64 
         size_t count = batch_count;
 
         const u32 P = static_cast<u32>(velora::MEMORY_READS);
+
+        // 🎯 CRITICAL DEBUG: Show what MEMORY_READS value is actually being used
+        {
+            std::stringstream debug;
+            debug << "🎯 GPU USING MEMORY_READS = " << P << " (velora::MEMORY_READS = " << velora::MEMORY_READS << ")";
+            LOG_DEBUG(debug.str(), "BLOCK");
+        }
 
         // 🎯 CRITICAL FIX: Use FIXED timestamp for all nonces to ensure GPU/CPU consistency
         u64 fixedTimestamp = timestamp;  // Use the block timestamp, not current time
@@ -544,6 +654,17 @@ std::vector<Hash256> VeloraAlgorithm::generateHashBatchGPU(u64 blockNumber, u64 
                 u64 nonce = start_nonce + (r * nonce_step);  // Same as GPU kernel
                 auto row = generateMemoryPattern(blockNumber, nonce, fixedTimestamp, previousHash, merkleRoot, difficulty);
                 std::memcpy(&h_pattern_pinned_[0][pattern_offset], row.data(), P * sizeof(u32));
+
+                // Log pattern for first nonce only
+                if (r == 0) {
+                    std::stringstream debug;
+                    debug << "Pattern first 10 elements: ";
+                    for (int i = 0; i < 10 && i < row.size(); i++) {
+                        if (i > 0) debug << ", ";
+                        debug << row[i];
+                    }
+                    LOG_DEBUG(debug.str(), "BLOCK");
+                }
             }
         }
 
@@ -1426,8 +1547,8 @@ bool VeloraAlgorithm::initializeGPU() {
 
         // Use the user-configured batch size without any memory-based clamping
     // User has full control over batch size via config.json
-    // Create enhanced GPU batch message with colors
-    std::string batchMessage = COLOR_CYAN + "New GPU batch " + COLOR_RESET + 
+    // Create enhanced GPU batch message with colors and GPU ID
+    std::string batchMessage = COLOR_CYAN + "New GPU" + std::to_string(gpuConfig_.deviceId) + " batch " + COLOR_RESET + 
                               COLOR_DARK_GRAY + "of " + COLOR_RESET +
                               COLOR_WHITE + std::to_string(gpuConfig_.maxNonces) + COLOR_RESET + " " +
                               COLOR_DARK_GRAY + "nonces" + COLOR_RESET;
