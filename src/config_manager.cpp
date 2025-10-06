@@ -60,11 +60,11 @@ bool ConfigManager::saveDefaultConfig(const std::string& configPath) {
     if (file.is_open()) {
         file << "{\n";
         file << "  \"pool\": {\n";
-        file << "    \"url\": \"stratum+tcp://pool.example.com:4444\",\n";
+        file << "    \"url\": \"stratum+tcp://pool.pastella.org:3333\",\n";
         file << "    \"wallet\": \"YOUR_WALLET_ADDRESS\",\n";
         file << "    \"worker\": \"pastella-miner\",\n";
         file << "    \"daemon\": false,\n";
-        file << "    \"daemon_url\": \"http://localhost:3002\",\n";
+        file << "    \"daemon_url\": \"http://localhost:22000\",\n";
         file << "    \"daemon_api_key\": \"\"\n";
         file << "  },\n";
         file << "  \"cuda\": {\n";
@@ -73,8 +73,8 @@ bool ConfigManager::saveDefaultConfig(const std::string& configPath) {
         file << "        \"id\": 0,\n";
         file << "        \"threads\": 256,\n";
         file << "        \"blocks\": 1024,\n";
-        file << "        \"batch_size\": 1000000,\n";
-        file << "        \"override_launch\": false,\n";
+        file << "        \"batch_size\": 128000,\n";
+        file << "        \"override_launch\": true,\n";
         file << "        \"enabled\": false\n";
         file << "      }\n";
         file << "    ]\n";
