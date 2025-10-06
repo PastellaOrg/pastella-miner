@@ -30,7 +30,8 @@ if(CUDA_FOUND)
         # 🔧 VISUAL STUDIO 2022 COMPATIBILITY: Allow CUDA 12.1 to work with VS 2022
         if(MSVC_VERSION GREATER_EQUAL 1930)
             list(APPEND CUDA_NVCC_FLAGS "-allow-unsupported-compiler")
-            message(STATUS "⚙️  VS 2022 detected - adding -allow-unsupported-compiler flag for CUDA 12.1")
+            list(APPEND CUDA_NVCC_FLAGS "-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH")
+            message(STATUS "⚙️  VS 2022 detected - adding compatibility flags for CUDA 12.1")
         endif()
 
         # Windows-specific: Add libcudacxx headers for <cuda/std/cstdint>
