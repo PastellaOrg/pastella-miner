@@ -16,8 +16,8 @@ if(CUDA_FOUND)
     # Define HAVE_CUDA to enable CUDA code paths
     add_definitions(-DHAVE_CUDA)
 
-    # 🎯 MULTI-ARCHITECTURE: Support wide range of GPUs from GTX 1060 to RTX 40 series
-    set(CMAKE_CUDA_ARCHITECTURES 61 70 75 86 89)
+    set(CMAKE_CUDA_ARCHITECTURES 50 52 60 61 70 75 80 86 89 90)
+
     set(CUDA_NVCC_FLAGS_DEBUG "-g -G")
     set(CUDA_NVCC_FLAGS_RELEASE "-O3")
 
