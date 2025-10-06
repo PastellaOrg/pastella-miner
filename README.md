@@ -1,234 +1,239 @@
-# Pastella Miner - C++ Implementation
+# Pastella Miner
 
 A high-performance C++ implementation of the Velora proof-of-work algorithm for the Pastella cryptocurrency.
 
-## 🚀 Features
+## Features
 
-- **High Performance**: 10-50x faster than Node.js implementation
-- **GPU Acceleration**: CUDA/OpenCL support for massive speedup
+- **High Performance**: NVIDIA GPU-accelerated mining with CUDA 12.1
+- **Multi-GPU Support**: Mine with multiple NVIDIA GPUs simultaneously
+- **Pool Mining**: Connect to mining pools (GPU only)
+- **Daemon Mining**: Direct blockchain mining (GPU and CPU)
 - **ASIC Resistant**: Memory-hard algorithm with unpredictable access patterns
-- **Cross Platform**: Windows, Linux, and macOS support
-- **Multi-GPU**: Support for multiple GPU devices
-- **Real-time Monitoring**: Live hash rate and progress tracking
+- **Real-time Monitoring**: Live hashrate and performance statistics
 
-## 📊 Performance Comparison
-
-| Implementation | CPU Hash Rate | GPU Hash Rate | Performance Gain |
-|----------------|---------------|---------------|------------------|
-| **Node.js** | 16,000 H/s | 287 H/s | 1x (baseline) |
-| **C++ CPU** | 200,000-800,000 H/s | - | 12-50x |
-| **C++ GPU** | 800,000 H/s | 2,000,000+ H/s | 50-125x |
-
-## 🏗️ Architecture
-
-```
-pastalla-miner/
-├── include/                 # Header files
-│   ├── velora/             # Velora algorithm headers
-│   └── utils/              # Utility headers
-├── src/                    # Source files
-│   ├── velora/             # Velora algorithm implementation
-│   ├── utils/              # Utility implementations
-│   └── main.cpp            # Main application
-├── CMakeLists.txt          # CMake build configuration
-└── README.md               # This file
-```
-
-## 🔧 Requirements
+## Requirements
 
 ### System Requirements
-- **OS**: Windows 10+, Linux (Ubuntu 18.04+), macOS 10.15+
-- **CPU**: x86_64 or ARM64 with SSE4.2 support
-- **RAM**: 8GB+ (64MB scratchpad + overhead)
-- **GPU**: NVIDIA (CUDA) or AMD/Intel (OpenCL) for acceleration
+- **OS**: Windows 10+ or Linux (Ubuntu 22.04+)
+- **RAM**: 8GB minimum (256MB scratchpad + overhead)
+- **GPU**: NVIDIA GPU with CUDA Compute Capability 5.0+ (GTX 900 series or newer)
 
-### Development Dependencies
-- **Compiler**: GCC 7+, Clang 6+, or MSVC 2019+
-- **CMake**: 3.16+
-- **OpenSSL**: 1.1.1+
-- **CUDA**: 11.0+ (optional, for NVIDIA GPU acceleration)
-- **OpenCL**: 2.0+ (optional, for AMD/Intel GPU acceleration)
+### Build Dependencies
+- **CMake**: 3.20+
+- **Compiler**:
+  - Windows: Visual Studio 2022
+  - Linux: GCC 11
+- **CUDA Toolkit**: 12.1 (required)
+- **OpenSSL**: 1.1.1+ (optional, Linux only)
 
-## 🚀 Quick Start
+## Quick Start
 
-### 1. Clone and Build
+### Windows
 
 ```bash
 # Clone the repository
-git clone <repository-url>
-cd pastalla-miner
+git clone https://github.com/PastellaOrg/pastella-miner.git
+cd pastella-miner
 
-# Create build directory
+# Build using batch script
+build.bat
+
+# Or build manually
 mkdir build && cd build
-
-# Configure with CMake
-cmake .. -DCMAKE_BUILD_TYPE=Release
-
-# Build the project
+cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
 cmake --build . --config Release
-
-# Install (optional)
-cmake --install .
 ```
 
-### 2. Run the Miner
+### Linux
 
 ```bash
-# Basic CPU mining
-./pastalla-miner
+# Clone the repository
+git clone https://github.com/PastellaOrg/pastella-miner.git
+cd pastella-miner
 
-# GPU mining with custom difficulty
-./pastalla-miner -g -d 5000
+# Install dependencies
+sudo apt-get update
+sudo apt-get install -y build-essential cmake libssl-dev
 
-# CPU mining with 8 threads
-./pastalla-miner -c -t 8 -n 1000000
+# Install CUDA 12.1
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb
+sudo dpkg -i cuda-keyring_1.0-1_all.deb
+sudo apt-get update
+sudo apt-get install -y cuda-toolkit-12-1
 
-# Mine specific block
-./pastalla-miner -b 12345 -d 10000
+# Build the miner
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake --build . --config Release
 ```
 
-### 3. Command Line Options
+## Usage
+
+### Configuration
+
+Edit `config.json` to configure your mining setup:
+
+```json
+{
+  "_preset": "balanced",
+
+  "pool": {
+    "url": "stratum+tcp://pool.pastella.org",
+    "port": 3333,
+    "wallet": "your_wallet_address",
+    "worker": "pastella-miner",
+    "daemon": false,
+    "daemon_url": "http://localhost:22000",
+    "daemon_api_key": ""
+  },
+
+  "cuda": {
+    "devices": [
+      {
+        "id": 0,
+        "threads": 512,
+        "blocks": 512,
+        "batch_size": 128000,
+        "enabled": true,
+        "override_launch": false
+      }
+    ]
+  },
+
+  "cpu": {
+    "enabled": false,
+    "threads": 4
+  },
+
+  "verbose": false
+}
+```
+
+### Presets
+
+Available GPU memory presets in `config.json`:
+
+- **auto**: Automatically detect GPU and apply optimal settings (recommended)
+- **maximum**: 85% VRAM usage, highest hashrate
+- **balanced**: 75% VRAM usage, good for gaming PCs
+- **lowpower**: 60% VRAM usage, 24/7 mining
+
+### Running the Miner
+
+```bash
+# Pool mining (GPU only)
+./pastella-miner
+
+# Daemon mining with GPU
+./pastella-miner --daemon
+
+# Daemon mining with CPU (fallback)
+./pastella-miner --daemon --cpu
+
+# Benchmark mode
+./pastella-miner --benchmark
+```
+
+### Command Line Options
 
 ```
-Usage: pastalla-miner [OPTIONS]
-
 Options:
-  -h, --help              Show this help message
-  -d, --difficulty <n>    Set mining difficulty (default: 1000)
-  -g, --gpu               Enable GPU mining
-  -c, --cpu               Force CPU-only mining
-  -t, --threads <n>       Number of CPU threads (default: 4)
-  -n, --nonces <n>        Maximum nonces to try (default: 1000000)
-  -b, --block <n>         Block number to mine (default: 1)
-  -v, --verbose           Enable verbose output
+  --help              Show help message
+  --benchmark         Run performance benchmark
+  --daemon            Enable daemon mining mode
+  --cpu               Enable CPU mining (daemon mode only)
+  -g, --gpu           Enable GPU mining (default)
+  -t, --threads <n>   Number of CPU threads (default: auto)
+  -d, --difficulty <n> Mining difficulty
 ```
 
-## 🎯 Velora Algorithm
+## Mining Modes
 
-The Velora algorithm is an ASIC-resistant, GPU-friendly proof-of-work algorithm that emphasizes:
+### Pool Mining
+- **GPU Support**: Full support with optimized batching
+- **CPU Support**: Not currently supported (in development)
+- **Features**: Stratum protocol, automatic failover, share validation
 
-- **Memory Hardness**: 64MB scratchpad with random access patterns
-- **Epoch Rotation**: Scratchpad changes every 10,000 blocks
-- **Unpredictable Access**: Memory patterns depend on block hash and nonce
-- **GPU Optimization**: Designed for parallel processing
+### Daemon Mining
+- **GPU Support**: Full support with multi-GPU capability
+- **CPU Support**: Full support with multi-threading
+- **Features**: Direct blockchain connection, block template updates
+
+## Architecture
+
+```
+pastella-miner/
+├── include/                    # Header files
+│   ├── velora/                # Velora algorithm (CPU/GPU)
+│   ├── utils/                 # Utilities (crypto, logging)
+│   ├── daemon/                # Daemon client
+│   └── mining_types.h         # Core mining data structures
+├── src/                       # Source files
+│   ├── velora/                # Algorithm implementation
+│   │   ├── velora_algorithm.cpp
+│   │   ├── velora_miner.cpp
+│   │   ├── velora_kernel.cu   # CUDA GPU kernels
+│   │   └── sha256n.cu         # GPU SHA-256
+│   ├── pool_miner.cpp         # Pool mining client
+│   ├── daemon_miner.cpp       # Daemon mining client
+│   ├── config_manager.cpp     # Configuration management
+│   └── main.cpp               # Entry point
+├── externals/                 # Third-party libraries
+│   ├── curl/                  # HTTP/Stratum networking
+│   └── rapidjson/             # JSON parsing
+├── CMakeLists.txt             # Build configuration
+└── config.json                # Runtime configuration
+```
+
+## Velora Algorithm
+
+The Velora algorithm is an ASIC-resistant, GPU-friendly proof-of-work algorithm designed for the Pastella cryptocurrency.
+
+### Key Parameters
+
+- **Scratchpad Size**: 256MB (2,016 blocks of 131,072 bytes)
+- **Memory Accesses**: 65,536 reads per hash
+- **Epoch Length**: 10,000 blocks (scratchpad regeneration)
+- **Finalization**: SHA-256 based
 
 ### Algorithm Flow
 
-1. **Epoch Calculation**: `epoch = floor(blockNumber / 10000)`
-2. **Scratchpad Generation**: PRNG-based 64MB memory initialization
-3. **Pattern Generation**: 1000 memory access indices from (headerHash, nonce)
-4. **Memory Walk**: Execute pattern with 32-bit mixing operations
-5. **Finalization**: SHA-256(headerHash || nonce || accumulator)
+1. **Epoch Calculation**: Determine current epoch from block number
+2. **Scratchpad Generation**: Initialize 256MB memory buffer with PRNG
+3. **Pattern Generation**: Generate 65,536 memory access indices from block header and nonce
+4. **Memory Walk**: Execute pattern with XOR mixing operations
+5. **Finalization**: SHA-256(block_header || nonce || timestamp || accumulator)
 
-## 🔧 Configuration
+### GPU Optimization
 
-### GPU Configuration
+- **Parallel Processing**: Process thousands of nonces simultaneously
+- **Memory Coalescing**: Optimized memory access patterns for GPU architecture
+- **Batch Processing**: Efficient workload distribution across CUDA cores
+- **Double Buffering**: Overlap computation and data transfer
 
-```cpp
-GPUConfig config;
-config.deviceId = 0;           // GPU device ID
-config.threadsPerBlock = 256;  // CUDA threads per block
-config.blocksPerGrid = 1024;   // CUDA grid size
-config.maxNonces = 1000000;    // Maximum nonces per batch
-config.useDoublePrecision = false; // Single precision for speed
-```
+## Troubleshooting
 
-### Performance Tuning
+### CUDA Not Found
+- Ensure CUDA Toolkit 12.1 is installed
+- Verify `nvcc` is in your PATH
+- Check GPU driver version (minimum 525.60.11 for Linux, 527.41 for Windows)
 
-- **CPU Threads**: Match your CPU core count
-- **GPU Threads**: 256-1024 threads per block (GPU dependent)
-- **Batch Size**: Larger batches improve GPU utilization
-- **Memory**: Ensure sufficient RAM for scratchpad
+### Build Failures
+- Windows: Ensure Visual Studio 2022 with C++ tools is installed
+- Linux: Install GCC 11 (CUDA 12.1 requirement)
+- Verify CMake version is 3.20 or higher
 
-## 📈 Performance Optimization
+### Low Hashrate
+- Check GPU utilization with `nvidia-smi`
+- Try different presets in config.json
+- Ensure GPU has sufficient power and cooling
+- Update NVIDIA drivers to latest version
 
-### CPU Optimizations
-- **SIMD Instructions**: AVX2/AVX-512 for vector operations
-- **Memory Layout**: Cache-friendly scratchpad access
-- **Thread Pooling**: Efficient thread management
-- **Compiler Flags**: `-O3 -march=native` for best performance
+### Pool Connection Issues
+- Verify pool URL and port are correct
+- Check firewall settings
+- Ensure wallet address is valid
 
-### GPU Optimizations
-- **Memory Coalescing**: Aligned memory access patterns
-- **Shared Memory**: Utilize GPU shared memory for frequently accessed data
-- **Kernel Optimization**: Minimize divergent branching
-- **Batch Processing**: Process multiple nonces simultaneously
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-1. **Build Failures**
-   - Ensure CMake 3.16+ is installed
-   - Check OpenSSL development libraries
-   - Verify compiler supports C++17
-
-2. **GPU Initialization Failures**
-   - Install latest GPU drivers
-   - Verify CUDA/OpenCL installation
-   - Check GPU memory availability
-
-3. **Performance Issues**
-   - Monitor CPU/GPU utilization
-   - Check memory bandwidth
-   - Verify algorithm parameters
-
-### Debug Mode
-
-```bash
-# Build with debug symbols
-cmake .. -DCMAKE_BUILD_TYPE=Debug
-cmake --build . --config Debug
-
-# Run with verbose output
-./pastalla-miner -v
-```
-
-## 🔒 Security Considerations
-
-- **ASIC Resistance**: Algorithm designed to prevent specialized hardware
-- **Memory Hardness**: Requires significant memory bandwidth
-- **Epoch Rotation**: Prevents long-term optimization
-- **Cryptographic Seeding**: SHA-256 based randomness
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Implement your changes
-4. Add tests and documentation
-5. Submit a pull request
-
-### Development Guidelines
-
-- Follow C++17 standards
-- Use RAII and smart pointers
-- Implement proper error handling
-- Add comprehensive tests
-- Document public APIs
-
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🙏 Acknowledgments
-
-- Original Velora algorithm design
-- OpenSSL for cryptographic functions
-- CUDA and OpenCL communities
-- Pastalla cryptocurrency team
-
-## 📞 Support
-
-- **Issues**: GitHub Issues
-- **Discussions**: GitHub Discussions
-- **Documentation**: [Wiki](link-to-wiki)
-- **Community**: [Discord/Telegram](link-to-community)
-
----
-
-**Happy Mining! ⛏️🚀**
-
-
-
-
