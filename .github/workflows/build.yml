@@ -240,7 +240,7 @@ jobs:
         cat release_notes.md
 
     - name: Create draft release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ steps.release_tag.outputs.tag }}
         name: Pastella Miner ${{ steps.release_tag.outputs.tag }}
